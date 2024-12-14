@@ -119,7 +119,7 @@ void token_manager_init(frame_callback_t cb)
 void token_manager_feed_data(const uint8_t *data, size_t len)
 {
     if (len > (PARSE_BUF_SIZE - parse_buf_len)) {
-    LOG_WRN(“Parse buffer overflow, discarding data”);
+    LOG_WRN("Parse buffer overflow, discarding data");
     return;
     }
 
