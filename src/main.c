@@ -1,42 +1,65 @@
-#include "uart_if.h"
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/uart.h>
 #include <zephyr/logging/log.h>
 
-LOG_MODULE_REGISTER(uart_test, LOG_LEVEL_DBG);
+LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
-static void uart_test_callback(const uint8_t *data, size_t length)
+static uint8_t rx_buf[2][64];
+static int current_buf = 0;
+
+static void uart_cb(const struct device *dev, struct uart_event *evt, void *user_data)
 {
-    if (data && length > 0) {
-        LOG_INF("Received %u bytes: %.*s", length, length, data);
-    } else {
-        LOG_INF("TX complete or an event occurred with no data");
+    switch (evt->type) {
+    case UART_RX_RDY:
+        LOG_INF("Received %d bytes: %.*s", evt->data.rx.len, evt->data.rx.len,
+                evt->data.rx.buf + evt->data.rx.offset);
+        break;
+    case UART_RX_BUF_REQUEST:
+        /* Provide a new buffer when requested */
+        current_buf = (current_buf + 1) % 2;
+        uart_rx_buf_rsp(dev, rx_buf[current_buf], sizeof(rx_buf[current_buf]));
+        break;
+    case UART_RX_BUF_RELEASED:
+        /* The previously used RX buffer is released here. Nothing special needed if double-buffering. */
+        break;
+    case UART_RX_DISABLED:
+        LOG_WRN("RX disabled");
+        break;
+    case UART_TX_DONE:
+        LOG_INF("TX complete");
+        break;
+    case UART_TX_ABORTED:
+        LOG_ERR("TX aborted");
+        break;
+    default:
+        LOG_DBG("Unhandled UART event: %d", evt->type);
+        break;
     }
 }
 
 void main(void)
 {
-    struct uart_hal_config cfg = {
-        .baud_rate = 115200,
-        .data_bits = 8,
-        .stop_bits = 1,
-        .parity = 0,
-        .flow_ctrl = 0,
-    };
-
-    if (uart_hal_init(&cfg) != 0) {
-        LOG_ERR("UART HAL init failed");
+    const struct device *uart_dev = DEVICE_DT_GET(DT_NODELABEL(uart0));
+    if (!device_is_ready(uart_dev)) {
+        LOG_ERR("UART device not ready");
         return;
     }
 
-    uart_hal_set_callback(uart_test_callback);
+    uart_callback_set(uart_dev, uart_cb, NULL);
 
-    while (1) {
-        const char *msg = "TEST\n";
-        int written = uart_hal_write((const uint8_t *)msg, strlen(msg));
-        if (written <= 0) {
-            LOG_WRN("Failed to write data");
-        }
-        k_sleep(K_MSEC(1000));
+    /* Enable RX with the first buffer */
+    int ret = uart_rx_enable(uart_dev, rx_buf[0], sizeof(rx_buf[0]), SYS_FOREVER_MS);
+    if (ret < 0) {
+        LOG_ERR("Failed to enable UART RX: %d", ret);
+        return;
     }
+
+    const char *msg = "Hello UART!\n";
+    for (const char *p = msg; *p != '\0'; p++) {
+        uart_poll_out(uart_dev, *p);
+    }
+
+    LOG_INF("Message sent over UART");
 }

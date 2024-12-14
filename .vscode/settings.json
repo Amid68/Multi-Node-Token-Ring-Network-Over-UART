@@ -1,0 +1,12 @@
+{
+    "nrf-connect.taskBindings": {
+        "pristineBuild": [
+            {
+                "taskName": "build",
+                "buildConfigs": [
+                    "${workspaceFolder}/build/Multi-Node-Token-Ring-Network-Over-UART"
+                ]
+            }
+        ]
+    }
+}
